@@ -3,158 +3,177 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Cinematic One-Tap</title>
+<title>Golden Hour Camera 🌅</title>
 <style>
-  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:system-ui,Arial}
-  .app{display:flex;flex-direction:column;min-height:100vh}
-  .stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden}
-  canvas{max-width:100%;max-height:100%;touch-action:none}
-  video{display:none}
-  .bar{display:flex;gap:10px;align-items:center;justify-content:center;padding:12px;border-top:1px solid #1d1d1d;background:#0b0b0b}
-  button{background:#22c55e;color:#062;border:0;padding:12px 18px;border-radius:999px;font-weight:800;font-size:16px}
-  .hint{font-size:12px;opacity:.85}
+  :root {
+    --accent: #f97316;
+    --bg: #000;
+    --fg: #fff;
+  }
+  html,body {
+    margin:0;
+    padding:0;
+    height:100%;
+    background:var(--bg);
+    color:var(--fg);
+    font-family: system-ui, Arial, sans-serif;
+  }
+  body {
+    display:flex;
+    flex-direction:column;
+  }
+  .stage {
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--bg);
+    overflow:hidden;
+    position:relative;
+  }
+  canvas {
+    width:100%;
+    height:auto;
+    object-fit:contain;
+    max-height:100%;
+  }
+  video {display:none;}
+  .bar {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    align-items:center;
+    gap:10px;
+    padding:12px;
+    background:#0b0b0b;
+    border-top:1px solid #222;
+  }
+  button {
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    padding:12px 18px;
+    border-radius:999px;
+    font-weight:700;
+    font-size:1rem;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  button:active {
+    background:#fb923c;
+    transform:scale(0.97);
+  }
+  .info {
+    font-size:0.85rem;
+    opacity:0.8;
+    text-align:center;
+  }
+  @media (max-width: 600px) {
+    button {
+      width:100%;
+      max-width:300px;
+    }
+    .info {font-size:0.75rem;}
+  }
 </style>
 </head>
 <body>
-<div class="app">
   <div class="stage">
     <canvas id="c"></canvas>
     <video id="v" autoplay playsinline></video>
   </div>
   <div class="bar">
-    <button id="shot">📸 JEPRET</button>
-    <span class="hint">Otomatis: grading + vignette + grain + crop 2.39:1</span>
+    <button id="shot">📸 Jepret Golden Hour</button>
   </div>
-</div>
+  <div class="info">
+    Warna otomatis hangat & lembut • Efek glow + tone golden hour • Rasio 2.39:1
+  </div>
 
 <script>
-(async ()=>{
-  const v = document.getElementById('v');
-  const c = document.getElementById('c');
-  const ctx = c.getContext('2d', {willReadFrequently:true});
-  const btn = document.getElementById('shot');
+(async()=>{
+  const v=document.getElementById('v'), c=document.getElementById('c');
+  const ctx=c.getContext('2d',{willReadFrequently:true});
+  const btn=document.getElementById('shot');
 
-  // ====== Start camera (prefer kamera belakang) ======
-  async function startCam(){
-    // constraint ringan biar lancar di HP; bisa dinaikkan nanti
-    const constraints = {
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280 }, height: { ideal: 720 }
-      },
-      audio: false
-    };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    v.srcObject = stream;
-    await v.play();
-    requestAnimationFrame(loop);
-  }
+  // Akses kamera (prioritaskan kamera belakang)
+  const stream=await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false
+  });
+  v.srcObject=stream; await v.play();
 
-  // ====== Grading sinematik (teal-orange sederhana + contrast + grain + vignette) ======
-  function cinematicPass(img){
-    const d = img.data, L = d.length;
+  // Efek golden hour
+  function goldenHour(img){
+    const d=img.data, w=img.width,h=img.height;
+    let avg=0,count=0;
+    for(let i=0;i<d.length;i+=24){avg+=0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2];count++;}
+    const gain=0.9/(avg/count/255);
 
-    // Kontras ringan
-    const contrast = 1.15;
-    const factor = (259*(contrast*128 - 128))/(255*(259 - (contrast*128 - 128)));
-
-    // Teal–orange sederhana + kontras
-    for (let i=0;i<L;i+=4){
-      let r=d[i], g=d[i+1], b=d[i+2];
-      const l = 0.2126*r + 0.7152*g + 0.0722*b; // luma
-      if (l < 100) { r*=0.92; g*=0.96; b*=1.05; } // shadows -> teal-ish
-      else         { r*=1.05; g*=1.02; b*=0.98; } // highlights -> warm
-      r = factor*(r-128)+128; g = factor*(g-128)+128; b = factor*(b-128)+128;
-      d[i]  = r<0?0:(r>255?255:r);
-      d[i+1]= g<0?0:(g>255?255:g);
-      d[i+2]= b<0?0:(b>255?255:b);
-    }
-
-    // Grain tipis
-    const grain = 0.08;
-    for (let i=0;i<L;i+=4){
-      const n = (Math.random()-0.5)*255*grain;
-      d[i]  = Math.max(0, Math.min(255, d[i]  + n));
-      d[i+1]= Math.max(0, Math.min(255, d[i+1]+ n));
-      d[i+2]= Math.max(0, Math.min(255, d[i+2]+ n));
-    }
-
-    // Vignette
-    const w = img.width, h = img.height;
-    const cx = w/2, cy = h/2;
-    const maxR = Math.hypot(cx, cy);
-    const vig = 0.42;
-    for (let y=0;y<h;y++){
-      for (let x=0;x<w;x++){
-        const dist = Math.hypot(x-cx, y-cy)/maxR;
-        const dark = Math.pow(dist, 2.2) * vig;
-        const idx = (y*w + x)*4;
-        d[idx]   *= (1-dark);
-        d[idx+1] *= (1-dark);
-        d[idx+2] *= (1-dark);
+    for(let y=0;y<h;y++){
+      const grad=0.4+0.6*(1-y/h); // gradient hangat dari atas
+      for(let x=0;x<w;x++){
+        const i=(y*w+x)*4;
+        let r=d[i]*gain,g=d[i+1]*gain,b=d[i+2]*gain;
+        const L=0.2126*r+0.7152*g+0.0722*b;
+        const glow=Math.pow(L/255,3)*180;
+        r+=glow*0.4; g+=glow*0.3;
+        // tone warm sunset
+        r*=1.14+0.10*grad; g*=1.07+0.05*grad; b*=0.93;
+        // soft contrast
+        const f=1.05; r=f*(r-128)+128; g=f*(g-128)+128; b=f*(b-128)+128;
+        d[i]=Math.min(255,Math.max(0,r));
+        d[i+1]=Math.min(255,Math.max(0,g));
+        d[i+2]=Math.min(255,Math.max(0,b));
       }
     }
     return img;
   }
 
-  // ====== Render loop (preview realtime dengan letterbox) ======
   function loop(){
-    const vw = v.videoWidth, vh = v.videoHeight;
-    if (!vw || !vh) return requestAnimationFrame(loop);
-
-    // Skala aman buat HP
-    const maxW = 1280;
-    let W = vw, H = vh;
-    if (vw > maxW){ const s = maxW / vw; W = Math.round(vw*s); H = Math.round(vh*s); }
-
-    c.width = W; c.height = H;
-    ctx.drawImage(v, 0, 0, W, H);
-
-    let img = ctx.getImageData(0,0,W,H);
-    img = cinematicPass(img);
-    ctx.putImageData(img, 0, 0);
-
-    // Letterbox (preview saja)
-    const tgtH = Math.round(W/2.39);
-    const bar = Math.max(0, Math.round((H - tgtH)/2));
-    if (bar > 0){
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, W, bar);
-      ctx.fillRect(0, H-bar, W, bar);
+    const W=v.videoWidth,H=v.videoHeight;
+    if(!W||!H) return requestAnimationFrame(loop);
+    const containerRatio = c.clientWidth / c.clientHeight;
+    const camRatio = W / H;
+    let drawW, drawH;
+    if(camRatio > containerRatio){ // crop horizontal
+      drawH = H;
+      drawW = H * containerRatio;
+    }else{ // crop vertical
+      drawW = W;
+      drawH = W / containerRatio;
     }
+    c.width = W; c.height = H;
+    ctx.drawImage(v,0,0,W,H);
+    let img = ctx.getImageData(0,0,W,H);
+    img = goldenHour(img);
+    ctx.putImageData(img,0,0);
 
+    // letterbox cinematic
+    const targetH = Math.round(W/2.39);
+    const bar = Math.max(0,Math.round((H-targetH)/2));
+    if(bar>0){ctx.fillStyle='black';ctx.fillRect(0,0,W,bar);ctx.fillRect(0,H-bar,W,bar);}
     requestAnimationFrame(loop);
   }
 
-  // ====== Capture (crop 2.39:1 tengah + simpan JPG) ======
-  function snap(){
-    const W = c.width, H = c.height;
-    const tgtH = Math.round(W/2.39);
-    const bar = Math.max(0, Math.round((H - tgtH)/2));
+  requestAnimationFrame(loop);
 
-    const out = document.createElement('canvas');
-    out.width = W; out.height = tgtH;
-    const octx = out.getContext('2d');
-    octx.drawImage(c, 0, bar, W, tgtH, 0, 0, W, tgtH);
-
+  btn.onclick=()=>{
+    const W=c.width,H=c.height;
+    const tgtH=Math.round(W/2.39);
+    const bar=Math.round((H-tgtH)/2);
+    const out=document.createElement('canvas');
+    out.width=W; out.height=tgtH;
+    const octx=out.getContext('2d');
+    octx.drawImage(c,0,bar,W,tgtH,0,0,W,tgtH);
     out.toBlob(b=>{
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(b);
-      a.download = `cinematic_${Date.now()}.jpg`;
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(b);
+      a.download=`goldenhour_${Date.now()}.jpg`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(a.href);
-    }, 'image/jpeg', 0.92);
-  }
-
-  btn.addEventListener('click', snap);
-
-  try {
-    await startCam();
-  } catch (e){
-    alert('Gagal akses kamera: ' + e.message + '\nTip: buka via HTTPS atau localhost.');
-  }
+    },'image/jpeg',0.92);
+  };
 })();
 </script>
 </body>
